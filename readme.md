@@ -67,7 +67,7 @@ rateLimiter Middleware
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ChinmayDaroliya/rate-limited-api-service.git
 cd rate-limited-api
 npm install
 ```

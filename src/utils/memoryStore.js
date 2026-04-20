@@ -1,5 +1,7 @@
+// In-memory storage for rate limiting fallback
 const store = new Map();
 
+// Get or create user record
 function getUserRecord(userId) {
   if (!store.has(userId)) {
     store.set(userId, { timestamps: [], total: 0 });
@@ -8,16 +10,7 @@ function getUserRecord(userId) {
 }
 
 /**
- * Checks and updates the rate limit for a user.
- *
- * Uses a SLIDING WINDOW approach:
- *   - We keep a list of timestamps for each request the user made
- *   - Before counting, we remove any timestamps older than 1 minute
- *   - If the remaining count >= limit, we reject
- *
- * This is more accurate than fixed windows (which can allow 10 requests
- * in 2 seconds if timed around a window boundary).
- *
+ * Sliding window rate limiter for in-memory fallback
  * @returns {{ allowed: boolean, requestCount: number, retryAfter: number }}
  */
 function checkAndIncrementMemory(userId, maxRequests, windowSeconds) {
@@ -25,10 +18,11 @@ function checkAndIncrementMemory(userId, maxRequests, windowSeconds) {
   const windowMs = windowSeconds * 1000;
   const record = getUserRecord(userId);
 
+  // Remove timestamps outside sliding window
   record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs);
 
+  // Check rate limit
   if (record.timestamps.length >= maxRequests) {
-
     const oldestTs = record.timestamps[0];
     const retryAfterMs = windowMs - (now - oldestTs);
     return {
@@ -38,6 +32,7 @@ function checkAndIncrementMemory(userId, maxRequests, windowSeconds) {
     };
   }
 
+  // Allow request: add timestamp and update counters
   record.timestamps.push(now);
   record.total += 1;
 
@@ -48,38 +43,54 @@ function checkAndIncrementMemory(userId, maxRequests, windowSeconds) {
   };
 }
 
+// Get statistics for specific user from memory
 function getStatsMemory(userId, windowSeconds) {
+  // Get user record
   const record = store.get(userId);
   if (!record) {
+    // Return default stats if user record not found
     return { total: 0, requestsInLastMinute: 0 };
   }
 
+  // Get current timestamp
   const now = Date.now();
+  // Calculate sliding window in milliseconds
   const windowMs = windowSeconds * 1000;
+  // Filter timestamps within sliding window
   const recentTimestamps = record.timestamps.filter((ts) => now - ts < windowMs);
 
+  // Return user statistics
   return {
     total: record.total,
     requestsInLastMinute: recentTimestamps.length,
   };
 }
 
+// Get statistics for all users from memory
 function getAllStatsMemory(windowSeconds) {
+  // Get current timestamp
   const now = Date.now();
+  // Calculate sliding window in milliseconds
   const windowMs = windowSeconds * 1000;
+  // Initialize result object
   const result = {};
 
+  // Iterate over user records
   for (const [userId, record] of store.entries()) {
+    // Filter timestamps within sliding window
     const recent = record.timestamps.filter((ts) => now - ts < windowMs);
+    // Add user statistics to result
     result[userId] = {
       total: record.total,
       requestsInLastMinute: recent.length,
     };
   }
 
+  // Return statistics for all users
   return result;
 }
 
+// Export memory store functions
 module.exports = {
   checkAndIncrementMemory,
   getStatsMemory,
